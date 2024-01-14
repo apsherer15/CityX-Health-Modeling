@@ -1,0 +1,253 @@
+---
+title: "Health of City X"
+author: "APSherer"
+date: "10/21/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Healthcare is one of the most important fields in the world, and being able to determine the risk each individual has of developing a major health concern is something that is incredibly important. The goal of this project is to pick and few health concerns and try to determine the underlying health factors that are the most beneficial in predicting if a certain individual is at risk for a particular health concern.
+
+### Prerequisites
+
+There are a few things that we need to do before we are able to do any kind of analysis. The first and most important of those things is to load the data set into R. In the code below I am loading the data set in and assigning it to a variable named "health."
+
+```{r health}
+health  <- read.csv("Health of CityX.csv")
+```
+
+The other important thing to do before going any further is determining which (if any) libraries are going to be used during the project. The only one I am going to use is a library called "tidyverse" which is actually a collection of a few different libraries. Again, this can be done by running the code as below.
+
+```{r tidy, message=FALSE, warning=FALSE}
+library(tidyverse)
+```
+
+After doing both of those things, we have one final step before we are actually able to analyze the data.
+
+### Cleaning the Data
+
+Before cleaning the data it may be beneficial to look at the structure and see what kind of data we are actually dealing with, and determine if there are any specific steps that should be taken to make sure our data is easier to work with. The code and output for this are shown below.
+
+```{r cleaning}
+str(health)
+```
+
+This output may be overwhelming to look at at first, but all we are really looking for is to see what type of data each variable is. In general it is much easier to work with numeric data, and in this case most of the data is numeric, so we shouldn't have too many issues with that.  
+
+The first step in actually cleaning the data is to make sure we do not have any missing values, or NAs. The code below can help us answer this, as it should give the output of the number of NAs we have in our data set.
+
+```{r nas}
+sum(is.na(health))
+```
+
+This tells us that we have two NAs in our data set that we have to deal with in order to be able to analyze our data. There are a few different ways you can do this, but the simplest way, and the way I am going to use, is by just omitting the rows that have NAs in them. This isn't really the best practice, but two NAs is not very many, so it would seem excessive to have to come up with a better solution in this scenario. We can omit the NAs by following this block of code:
+
+```{r omit}
+health <- na.omit(health)
+```
+
+Now if we check our data by using the same code as before, we should see that there we now have zero NAs in our data.
+
+```{r nasCheck}
+sum(is.na(health))
+```
+
+When cleaning the data we are trying to make it as organized and usable as possible. One thing that I noticed when I looked at the structure of our health data is that nearly every variable ends with  "_CrudePrev." While this suffix doesn't cause any issues with our analysis, it is not very convenient to have to type it out every time we type out the name of any of our variables. In order to work around this, I am going to remove the suffix from the end of every variable. Because it is not exclusive to a few variables, we can safely assume that removing this will not affect our data, or our ability to interpret the data. I removed the suffix by using the code below.
+
+```{r CrudePrev}
+names(health) <- sub('_CrudePrev', '', names(health))
+```
+
+And now if we look at the structure of our data again, we should be able to see that the suffix has been removed form every variable.
+
+```{r strCheck}
+str(health)
+```
+
+This should make our code significantly easier to read and use.  
+
+The final thing we need to do as a part of the cleaning process is create train and test sets for our data. This is a very important step because it allows us to create two different samples of our data so that we can use one sample to build models, and use the other sample to test their accuracy. For this project we are going to use 75% of the data for the train set, and 25% of the data for the test set. There is no right or wrong answer as to what kind of split you want to use here, but a split that is similar to this one is the most common. We will also set a seed, which allows anyone to be able to replicate the exact same train and test sets we are creating here. The following code is used to split the data.
+
+```{r trainTest}
+set.seed(2342)
+trainHealth <- sample(nrow(health), 0.75*nrow(health), replace=FALSE)
+
+healthTrain <- health[trainHealth,]
+healthTest <- health[-trainHealth,]
+```
+
+After running this code, we should have complete train and test sets for our data, and we can finally start with our analysis.
+
+## Analyzing the Data
+
+The first step in analyzing the data is to determine what questions we want to answer. For this project I am primarily looking at the question "How can we determine if a person is at risk for a major health concern?" This question is very vague, but we can refine it a little bit better by decided what we are considering "major health concerns." While there are many others that are important, I am primarily going to look at coronary heart disease or CHD. By doing this we can reword our original question to be more specific in what we are looking for. "What health traits provide the most information about CHD, and how can we use them to predict an individual's risk of CHD?"
+
+### CHD
+The first thing I want to look do is look at a few different graphs to see if any of them tell us anything about the data. The first two graphs that will be shown below are a histogram which will show us the distribution of the data, and a box plot which will help us identify any outliers in our data set.
+
+```{r histBoxCHD, echo=FALSE}
+hist(healthTrain$CHD, breaks = 10)
+boxplot(healthTrain$CHD)
+```  
+  
+This does not give us too much information, other than that our data is at least close to normally distributed, and we do not appear to have any extreme outliers. There is one more set of graphs that I want to look at. I want to graph CHD against all other variables in the data set to see if we can determine a relationship that may not be linear, but that we can transform to make linear.
+```{r graphCHDD, echo=FALSE}
+theme_set(
+  theme_bw() +
+    theme(legend.position = "top")
+)
+
+
+healthTrain.gathered <- healthTrain %>%
+  as_tibble() %>%
+  gather(key = "variable", value = "value",
+         -CHD, -Population2010)
+
+
+ggplot(healthTrain.gathered, aes(x = value, y = CHD)) +
+  geom_point() +
+  facet_wrap(~variable)
+```
+  
+While these graphs are not the easiest to look at as there is a lot going on, they are good enough to see that there doesn't really appear to be a non-linear relationship between CHD and any of the variables.  
+
+The next thing I am going to do when trying to build a model to predict CHD is run a correlation test. This will tell us which variables in our data set have the highest correlation with CHD, and therefore may be useful when building a model. The code below will run the test, and the output will be listed below.
+
+```{r, corrCHD}
+chd.cor <- cor(healthTrain[ , colnames(healthTrain) != "CHD"],
+                healthTrain$CHD)
+chd.cor
+```
+By looking at this output we can determine that there are four variables that have a correlation of above 90%. These variables are: KIDNEY: 94.8%, COPD: 90.0%, KIDNEY: 93.6%, STROKE: 94.4%. The first model I am going to look at is going to be a model that uses all four of these variables to predict CHD. This most likely will be accurate, but not very useful as it requires a lot of data to use, which is something we do not always have, but it will give us a good baseline to compare future models to. The code that generates the model will be listed below, as well as the summary of the model that will give us some useful information about the model and its accuracy.
+
+```{r, CHDmodel1}
+chd.model <- lm(CHD ~ BPHIGH + COPD + KIDNEY + STROKE, data=healthTrain)
+summary(chd.model)
+```
+
+This model gives us an Adjusted R-squared of 0.9288, which is relatively high. In order to further test this model I am going to test it against our train set by predicting the data, determining the Mean Squared Error (MSE), which gives us average distance between the actual and predicted values squared, and looking at a few different plots to help aid in determining the accuracy of this model.
+
+```{r, CHDpredict1}
+chd.predict <- predict(chd.model, healthTest)
+mean((healthTest$CHD - chd.predict)^2)
+```
+```{r, CHDplot1, echo=FALSE}
+plot(healthTest$CHD)
+points(chd.predict, col="red")
+legend(x = "topright",
+       legend = c("Actual", "Predicted"),
+       fill = c("black", "red"),
+       col = c("black", "red"))
+```
+  
+Our MSE for this model is 0.1677882, which is a very good MSE to get. The closer to 0 the better, but I am generally looking for anything under approximately 0.25. We can also see by looking at our plot that the predicted values seem to be relatively close to the actual values.  
+
+While this model does seem to be very accurate, as I said, it requires a lot of data. The next thing I want to do is see if I can reduce the number of variables, while still maintaining an accurate model.  
+
+In doing this, I am just going to create a one variable linear model for each of the four variables we have used, and evaluate each model using the same diagnostics as we did for the first model. You can see the code and explanations for the outputs for each model below.
+
+### Blood Pressure
+
+```{r, CHDmodel2}
+chd.model.bphigh <- lm(CHD ~ BPHIGH, data=healthTrain)
+summary(chd.model.bphigh)
+```
+This model gives us an Adjusted R-squared value of 0.8937, which is less accurate than the original model, but still nearly 90%, which is relatively high.  
+
+We will again predict the points and use MSE and plots to evaluate them.
+```{r, CHDpredict2}
+chd.predict.bphigh <- predict(chd.model.bphigh, healthTest)
+mean((healthTest$CHD - chd.predict.bphigh)^2)
+```
+```{r, CHDplot2, echo=FALSE}
+plot(healthTest$CHD)
+points(chd.predict, col="red")
+legend(x = "topright",
+       legend = c("Actual", "Predicted"),
+       fill = c("black", "red"),
+       col = c("black", "red"))
+```
+  
+  This model gives us a MSE of 0.2732, which is nearly double that of the last model, but still nearly under the target MSE I set of 0.25.
+  
+### Kidney
+
+```{r, CHDmodel3}
+chd.model.kidney <- lm(CHD ~ KIDNEY, data=healthTrain)
+summary(chd.model.kidney)
+```
+This model gives us an Adjusted R-squared value of 0.8692, which is not as good as our model using blood pressure.  
+
+Our plots and MSE are below.
+```{r, CHDpredict3}
+chd.predict.kidney <- predict(chd.model.kidney, healthTest)
+mean((healthTest$CHD - chd.predict.kidney)^2)
+```
+```{r, CHDplot3, echo=FALSE}
+plot(healthTest$CHD)
+points(chd.predict, col="red")
+legend(x = "topright",
+       legend = c("Actual", "Predicted"),
+       fill = c("black", "red"),
+       col = c("black", "red"))
+```
+  
+This model gives us a MSE of 0.3290, which also is not as good as the blood pressure model, so we are going to assume this model is not as good. The plots also prove this as they are visibily not as accurate.
+
+### Stroke
+
+```{r, CHDmodel4}
+chd.model.stroke <- lm(CHD ~ STROKE, data=healthTrain)
+summary(chd.model.stroke)
+```
+This model gives us an Adjusted R-squared value of 0.8752, which is better than the model using kidney, but not as good as the one using blood pressure.  
+
+Our plots and MSE are below.
+```{r, CHDpredict4}
+chd.predict.stroke <- predict(chd.model.stroke, healthTest)
+mean((healthTest$CHD - chd.predict.stroke)^2)
+```
+```{r, CHDplot4, echo=FALSE}
+plot(healthTest$CHD)
+points(chd.predict, col="red")
+legend(x = "topright",
+       legend = c("Actual", "Predicted"),
+       fill = c("black", "red"),
+       col = c("black", "red"))
+```
+  
+This model gives us a MSE of 0.238, which is the best MSE we have gotten using our single variable linear models. This is somewhat surprising as our Adjusted R-squared did not seem to be great.
+
+### COPD
+
+```{r, CHDmodel5}
+chd.model.copd <- lm(CHD ~ COPD, data=healthTrain)
+summary(chd.model.copd)
+```
+This model gives us an Adjusted R-squared value of 0.7862, which is the worst value we have gotten so far.
+
+Our plots and MSE are below.
+```{r, CHDpredict5}
+chd.predict.copd <- predict(chd.model.copd, healthTest)
+mean((healthTest$CHD - chd.predict.copd)^2)
+```
+```{r, CHDplot5, echo=FALSE}
+plot(healthTest$CHD)
+points(chd.predict, col="red")
+legend(x = "topright",
+       legend = c("Actual", "Predicted"),
+       fill = c("black", "red"),
+       col = c("black", "red"))
+```
+  
+This model gives us a MSE of 0.48522, which again, is the worst value we have had so far.  
+
+## Summary
+So what do all of these R-squared and MSE values mean, and how are they useful to us? Well as I have said, they help us evaluate the models and how accurate they are. Our ultimate goal here is that we are trying to find the best possible prediction for coronary heart disease, or CHD. However the best model can mean a multitude of different things. If we only look at best as the most accurate, then we will run into some problems. For example, if we look at the models we built for CHD and evaluate them using this mindset, we can confidently say that the best model was the one that included all of our most correlated variables, blood pressure, kidney, stroke, and COPD. However, this is not really the best model, because some of these variables are very hard to obtain information on, and the chances of having all of this data are very slim.  
+
+So the real question we are trying to answer here is "Which of our models should be used to try to predict CHD?" The two models that appeared to be the most accurate based off of MSE and Adjusted R-squared is the model that used stroke as the predictor variable, and the model that used blood pressure as the predictor variable. Despite having a worse adjusted R-squared value, the model using stroke was more accurate when applied to the test set, so many people would pick this model to use. But one thing that many people may neglect to consider is the availability and convenience of obtaining data. If we are depending on this information to predict whether or not somebody is at risk of having coronary heart disease, what is going to be the easiest to collect: information about strokes, or the person's blood pressure. The answer would almost definitely be the blood pressure. Therefore, this is the model I would choose to provide a healthcare company with, because it is an accurate model, that also uses very obtainable data to predict a very serious health condition.
